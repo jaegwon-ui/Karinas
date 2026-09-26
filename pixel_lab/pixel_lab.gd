@@ -22,6 +22,8 @@ var light_yaw_degrees := -35.0
 var auto_rotate := false
 var motion: int = PoseDriver.Motion.IDLE
 var expression := ""
+var knight_gear := true         ## 망토, 검, 어깨 갑옷
+var dnf_style := false          ## 위에서 30도, 딱 끊기는 음영, 색 외곽선, 발밑 그림자
 
 var _time := 0.0
 var _capturing := false
@@ -31,6 +33,8 @@ var _model_height := 1.6
 var _pose: PoseDriver
 var _anim: AnimationPlayer
 var _model_paths := PackedStringArray()
+var _knight: KnightKit
+var _shadow: Node2D
 
 # 렌더링 파이프라인: 3D(저해상도) → 후처리(외곽선, 색) → 화면에 정수배 확대
 var _pixel_viewport: SubViewport
@@ -60,6 +64,9 @@ func _ready() -> void:
 	_refresh_model_list()
 
 	var args := _user_args()
+	knight_gear = args.get("knight", "1") != "0"
+	if args.has("dnf"):
+		set_dnf_style(true)
 	if args.has("model"):
 		_load_model(args["model"])
 	elif not _model_paths.is_empty():
@@ -85,11 +92,15 @@ func _process(delta: float) -> void:
 
 func _apply_frame() -> void:
 	if _pose:
+		_pose.grip = _knight != null
 		_pose.apply(motion, _time)
 	_pivot.rotation_degrees.y = yaw_degrees
 	_light.rotation_degrees = Vector3(-40.0, light_yaw_degrees, 0.0)
+	if _knight:
+		_knight.set_light_direction(_light.global_basis.z)
 	_update_camera(_pixel_camera)
 	_update_camera(_hires_camera)
+	_shadow.queue_redraw()
 
 
 # ---------------------------------------------------------------- 렌더링 파이프라인
@@ -146,6 +157,10 @@ func _build_pipeline() -> void:
 	_post_viewport.disable_3d = true
 	_post_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(_post_viewport)
+	# 발밑 그림자는 캐릭터 그림 뒤에 2D 타원으로 찍는다 (도트 경계가 깔끔하게)
+	_shadow = Node2D.new()
+	_shadow.draw.connect(_draw_shadow)
+	_post_viewport.add_child(_shadow)
 	var post_rect := TextureRect.new()
 	post_rect.texture = _pixel_viewport.get_texture()
 	post_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -181,7 +196,7 @@ func _set_pixel_height(value: int) -> void:
 	var side := int(round(value * 1.25))
 	_pixel_viewport.size = Vector2i(side, side)
 	_post_viewport.size = Vector2i(side, side)
-	var post_rect := _post_viewport.get_child(0) as TextureRect
+	var post_rect := _post_viewport.get_child(1) as TextureRect
 	post_rect.size = Vector2(side, side)
 	if _size_label:
 		_size_label.text = "캔버스 %d×%d px" % [side, side]
@@ -227,6 +242,9 @@ func _load_model(path: String) -> void:
 	_anim = model.get_node_or_null("AnimationPlayer") as AnimationPlayer
 	_fit_model(model)
 	_prepare_materials_for_pixels(model)
+	_apply_toon_bands()
+	if knight_gear and skeleton:
+		_attach_knight_gear(skeleton)
 	_apply_expression()
 
 	var index := _model_paths.find(path)
@@ -250,12 +268,65 @@ func _prepare_materials_for_pixels(model: Node) -> void:
 				mat.next_pass = null
 
 
+func _attach_knight_gear(skeleton: Skeleton3D) -> void:
+	_knight = KnightKit.new()
+	_knight.name = "KnightKit"
+	_pivot.add_child(_knight)
+	_knight.setup(skeleton)
+
+
+func set_knight_gear(on: bool) -> void:
+	knight_gear = on
+	if on and _knight == null and _pose:
+		_attach_knight_gear(_pose.skeleton)
+	elif not on and _knight:
+		_knight.queue_free()
+		_knight = null
+
+
+func set_dnf_style(on: bool) -> void:
+	dnf_style = on
+	pitch_degrees = 30.0 if on else 8.0
+	_post_material.set_shader_parameter("colored_outline", on)
+	_post_material.set_shader_parameter("cleanup", on)
+	_apply_toon_bands()
+
+
+## 던파 느낌일 때는 VRoid 재질의 부드러운 음영을 딱 끊기는 두 단계로 바꾼다.
+func _apply_toon_bands() -> void:
+	if _model == null:
+		return
+	for node in _model.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		for i in mesh.mesh.get_surface_count():
+			var mat := mesh.get_active_material(i) as ShaderMaterial
+			if mat == null or mat.get_shader_parameter("_ShadeToony") == null:
+				continue
+			if not mat.has_meta("original_toony"):
+				mat.set_meta("original_toony", mat.get_shader_parameter("_ShadeToony"))
+			mat.set_shader_parameter("_ShadeToony", 0.95 if dnf_style else mat.get_meta("original_toony"))
+
+
+func _draw_shadow() -> void:
+	if not dnf_style or _model == null:
+		return
+	var center := _pixel_camera.unproject_position(_pivot.global_position).round()
+	var rx: float = round(0.24 / _pixel_camera.size * _pixel_viewport.size.y)
+	var ry: float = max(1.0, round(rx * sin(deg_to_rad(pitch_degrees)) * 0.9))
+	var points := PackedVector2Array()
+	for i in 24:
+		var a := TAU * i / 24.0
+		points.append(center + Vector2(cos(a) * rx, sin(a) * ry))
+	_shadow.draw_colored_polygon(points, Color(0.05, 0.02, 0.08, 0.4))
+
+
 func _clear_model() -> void:
 	for child in _pivot.get_children():
 		child.queue_free()
 	_model = null
 	_pose = null
 	_anim = null
+	_knight = null
 
 
 ## 발이 바닥(y=0)에 닿고 가운데 서도록 맞춘다.
@@ -600,8 +671,14 @@ func _build_ui() -> void:
 			yaw_degrees = VIEWS[view_name]
 			yaw_slider.value = yaw_degrees)
 	_check(panel, "자동 회전", auto_rotate, func(on: bool) -> void: auto_rotate = on)
-	_slider(panel, "카메라 높이 각도", -10, 45, 1, pitch_degrees, func(v: float) -> void: pitch_degrees = v)
+	var pitch_slider := _slider(panel, "카메라 높이 각도", -10, 45, 1, pitch_degrees, func(v: float) -> void: pitch_degrees = v)
 	_slider(panel, "빛 방향", -180, 180, 5, light_yaw_degrees, func(v: float) -> void: light_yaw_degrees = v)
+
+	_section(panel, "스타일")
+	_check(panel, "여기사 장비 (망토, 검)", knight_gear, set_knight_gear)
+	_check(panel, "던파 느낌 (위 30도, 셀 음영, 그림자)", dnf_style, func(on: bool) -> void:
+		set_dnf_style(on)
+		pitch_slider.value = pitch_degrees)
 
 	_section(panel, "동작과 표정")
 	var motions := OptionButton.new()

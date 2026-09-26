@@ -27,6 +27,8 @@ const MOTION_PERIOD := {
 const HIPS_OFFSET := "_hips_offset"
 
 var skeleton: Skeleton3D
+## 손가락을 말아 쥔 주먹 (검을 들 때)
+var grip := false
 var _leg_length := 0.8
 
 
@@ -41,6 +43,8 @@ func _init(target: Skeleton3D) -> void:
 func apply(motion: int, time: float) -> void:
 	var period: float = MOTION_PERIOD[motion]
 	var pose := _sample(_keys(motion), fposmod(time, period) / period)
+	if grip:
+		_add_fists(pose)
 	skeleton.reset_bone_poses()
 	for bone_name: String in pose:
 		if bone_name == HIPS_OFFSET:
@@ -110,6 +114,15 @@ static func _arms_down(spread := 0.0, elbow := 12.0) -> Dictionary:
 	_both(pose, "LowerArm", Vector3(0, -elbow, 0))
 	_both(pose, "Hand", Vector3(0, 0, -6))
 	return pose
+
+
+## 손바닥이 아래를 보는 T자 기준으로, 손가락 마디를 아래(-Y)로 만다.
+static func _add_fists(pose: Dictionary) -> void:
+	for finger in ["Index", "Middle", "Ring", "Little"]:
+		for joint: String in ["Proximal", "Intermediate", "Distal"]:
+			_both(pose, finger + joint, Vector3(0, 0, -75 if joint == "Proximal" else -80))
+	_both(pose, "ThumbProximal", Vector3(0, -25, -20))
+	_both(pose, "ThumbDistal", Vector3(0, -20, -30))
 
 
 ## 무릎을 굽히면 골반을 내려서 발이 바닥에 붙어 있게 한다.

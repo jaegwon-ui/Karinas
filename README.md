@@ -5,6 +5,8 @@
 ## 지금 들어 있는 것
 
 - `pixel_lab/`: 도트 룩 실험실. VRM 캐릭터를 저해상도로 렌더링하고 외곽선을 입혀 도트처럼 만든다.
+  - `knight_kit.gd`: 아무 VRM에나 붙는 여기사 장비 (천 물리 망토, 검, 어깨 갑옷)
+  - 던파 느낌 모드: 위에서 30도 카메라, 딱 끊기는 음영, 색 외곽선, 외톨이 픽셀 청소, 발밑 그림자
 - `characters/samples/`: CC0 샘플 모델 (라이선스는 폴더 안 `LICENSE.md`)
 - `addons/vrm`, `addons/Godot-MToon-Shader`: [V-Sekai/godot-vrm](https://github.com/V-Sekai/godot-vrm) (MIT, commit e15199f)
 - `assets/fonts/Galmuri11.woff2`: [갈무리](https://github.com/quiple/galmuri) 폰트 (OFL 1.1)
@@ -25,3 +27,4 @@ godot --path . --fixed-fps 50 -- --sequence=저장폴더 --motion=idle --px=128 
 ```
 
 `--motion` 은 `stand`, `idle`, `battle_idle`, `attack` 중 하나.
+`--dnf` 를 붙이면 던파 느낌 모드, `--knight=0` 이면 여기사 장비를 뺀다.
