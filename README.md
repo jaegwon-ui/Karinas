@@ -12,11 +12,16 @@
 ## 알려진 문제
 
 - 실험실 조작판의 글자가 표시되지 않음 (폰트 복제 코드 버그)
-- 캐릭터 가장자리에 튀는 픽셀이 생김
 - 동작(공격 등)은 코드로 만든 임시 포즈라 어색함
 
 ## 명령줄로 캡처하기
 
 ```
+# 방향별 이미지와 스프라이트 시트
 godot --path . -- --capture=저장폴더
+
+# GIF용 연속 프레임 (초당 50장, 머리카락 흔들림까지 일정하게)
+godot --path . --fixed-fps 50 -- --sequence=저장폴더 --motion=idle --px=128 --yaw=35 [--spin] [--loops=2]
 ```
+
+`--motion` 은 `stand`, `idle`, `battle_idle`, `attack` 중 하나.

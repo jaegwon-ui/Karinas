@@ -69,6 +69,8 @@ func _ready() -> void:
 
 	if args.has("capture"):
 		_run_capture(args["capture"])
+	elif args.has("sequence"):
+		_run_sequence(args["sequence"], args)
 
 
 func _process(delta: float) -> void:
@@ -224,6 +226,7 @@ func _load_model(path: String) -> void:
 	_pose = PoseDriver.new(skeleton) if skeleton else null
 	_anim = model.get_node_or_null("AnimationPlayer") as AnimationPlayer
 	_fit_model(model)
+	_prepare_materials_for_pixels(model)
 	_apply_expression()
 
 	var index := _model_paths.find(path)
@@ -231,6 +234,20 @@ func _load_model(path: String) -> void:
 		_model_option.select(index)
 	_info_label.text = _describe_model(model, path)
 	_set_status("불러옴: %s" % path.get_file())
+
+
+## 작은 해상도에서 튀는 효과를 끈다.
+## - 매트캡 림(_SphereAdd): 가장자리 반짝임이 금색 점처럼 흩어진다
+## - MToon 외곽선(next_pass): 얇은 선이 끊겨 붉은 점이 된다. 외곽선은 후처리 셰이더가 대신 그린다
+func _prepare_materials_for_pixels(model: Node) -> void:
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		for i in mesh.mesh.get_surface_count():
+			var mat := mesh.get_active_material(i)
+			if mat is ShaderMaterial:
+				mat.set_shader_parameter("_SphereAdd", null)
+			if mat:
+				mat.next_pass = null
 
 
 func _clear_model() -> void:
@@ -419,6 +436,35 @@ func _user_args() -> Dictionary:
 			var parts := arg.trim_prefix("--").split("=", true, 1)
 			out[parts[0]] = parts[1] if parts.size() > 1 else ""
 	return out
+
+
+## GIF/영상용 연속 프레임. 부드럽게 뽑으려면 --fixed-fps 50 과 함께 실행한다.
+##   godot --path . --fixed-fps 50 -- --sequence=폴더 --motion=idle --px=128 --yaw=35 [--spin] [--loops=2] [--raw]
+func _run_sequence(dir: String, args: Dictionary) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	var slugs := ["stand", "idle", "battle_idle", "attack"]
+	motion = max(0, slugs.find(args.get("motion", "idle")))
+	_set_pixel_height(int(args.get("px", "128")))
+	var start_yaw := float(args.get("yaw", "35"))
+	yaw_degrees = start_yaw
+	var fps := float(args.get("fps", "50"))  # --fixed-fps 값과 맞춘다
+	var period: float = PoseDriver.MOTION_PERIOD[motion]
+	var total := int(round(period * int(args.get("loops", "1")) * fps))
+	_capturing = true
+	# 한 바퀴 먼저 돌려서 머리카락이 자리를 잡게 한다.
+	var warmup := int(round(period * fps))
+	for i in warmup + total:
+		_time = i / fps
+		if args.has("spin"):
+			yaw_degrees = start_yaw + 360.0 * float(max(0, i - warmup)) / total
+		await RenderingServer.frame_post_draw
+		if i >= warmup:
+			var n := i - warmup
+			_post_viewport.get_texture().get_image().save_png(dir.path_join("frame_%04d.png" % n))
+			if args.has("raw"):
+				_pixel_viewport.get_texture().get_image().save_png(dir.path_join("raw_%04d.png" % n))
+	print("SEQUENCE_DONE ", total, " frames @ ", fps, "fps -> ", dir)
+	get_tree().quit()
 
 
 func _run_capture(dir: String) -> void:
