@@ -1,0 +1,6 @@
+# Godot 캐시
+.godot/
+# 실험실에서 저장한 이미지
+exports/
+# VRoid Hub 등에서 받은 모델 (대부분 재배포 금지라 올리지 않는다)
+characters/downloaded/
