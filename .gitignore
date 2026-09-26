@@ -4,3 +4,5 @@
 exports/
 # VRoid Hub 등에서 받은 모델 (대부분 재배포 금지라 올리지 않는다)
 characters/downloaded/
+# 파이썬 캐시
+__pycache__/
